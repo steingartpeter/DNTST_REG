@@ -40,5 +40,24 @@ class UserAuthApiController
         // and call sendJsonResponse()
     }
 
+    public function controllertest($requestData)
+    {
+        //<SF>
+        // CREATED ON: 2025-06-10 <br>
+        // CREATED BY: AX07057<br>
+        // Dummy function for testing connection, and function.<br>
+        // PARAMETERS:
+        //×-
+        // @-- @param = ... -@
+        //-×
+        //CHANGES:
+        //×-
+        // @-- ... -@
+        //-×
+        //</SF>
+
+        echo json_encode(['FLAG' => 'OK', 'MSG' => 'CALL OK: UserAuthApiCOntroller=>controllertest()', 'DATA' => []], JSON_UNESCAPED_UNICODE);
+    }
+
     // Other methods like logout, getProfile, etc.
 }

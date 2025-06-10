@@ -50,26 +50,31 @@ class Database
         //-×
         //</SF>
 
-        //<nn>
-        // Set DSN (Data Source Name) - not strictly DSN for mysqli, but conceptual
-        // Create a new mysqli connection
-        //</nn>
+        mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
-        $this->connection = new mysqli($this->host, $this->user, $this->pass, $this->dbname);
+        try {
+            //<nn>
+            // Set DSN (Data Source Name) - not strictly DSN for mysqli, but conceptual
+            // Create a new mysqli connection
+            //</nn>
+            $this->connection = new mysqli($this->host, $this->user, $this->pass, $this->dbname);
 
-        //<nn>
-        // Check for connection errors
-        //</nn>
-        if ($this->connection->connect_error) {
-            $this->error = "Connection failed: " . $this->connection->connect_error;
-            die("Database connection raised exception: " . $this->error);
-        }
-        //<nn>
-        // Optional: Set charset to utf8mb4 for full Unicode support
-        //</nn>
-        if (!$this->connection->set_charset("utf8mb4")) {
-            // Handle error if charset setting fails
-            // printf("Error loading character set utf8mb4: %s\n", $this->connection->error);
+            //<nn>
+            // Optional: Set charset to utf8mb4 for full Unicode support
+            //</nn>
+            if (!$this->connection->set_charset("utf8mb4")) {
+                // This will throw an exception if mysqli_report is active and charset setting fails.
+                // For older PHP/mysqli versions or if mysqli_report is not fully effective for set_charset,
+                // an explicit throw here ensures the error is handled as an exception.
+                throw new Exception("Error loading character set utf8mb4: " . $this->connection->error);
+            }
+        } catch (Exception $e) {
+            // Log the error server-side for debugging purposes.
+            error_log("Database Initialization Error: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine());
+
+            // Rethrow the exception. This allows it to be caught by the global ErrorHandler 
+            // (set in index.php), which will then send a standardized JSON error response to the client.
+            throw $e;
         }
     }
 
@@ -133,6 +138,190 @@ class Database
         if ($this->connection) {
             $this->connection->close();
         }
+    }
+
+    public function GNRL_SELECT(array $prmObj): array
+    {
+        //<SF>
+        // CREATED ON: 2024-06-11 <br>
+        // CREATED BY: AX07057+G.Gemini<br>
+        // General selection query generator, based on prm obj, using prepared statements.<br>
+        // PARAMETERS:
+        //×-
+        // @-- @prmObj = an object with several elements: DB_NAME,TBL_NM,FIELD_NAMES,FILTERS,ENDCLOSURES,FUNC_NM -@
+        //    - DB_NAME (optional): Database name. Defaults to class dbname.
+        //    - TBL_NAME (required): Table name.
+        //    - FIELD_NAMES (optional): Array of field names. Defaults to ['*'].
+        //    - FILTERS (optional): Array of filter objects. Each filter:
+        //        - FLD_NAME (required): Field name for the filter.
+        //        - RELATION (required): Comparison operator (=, !=, >, <, >=, <=, LIKE, IS NULL, IS NOT NULL, IN, etc.).
+        //        - VALUE (required for most relations): The value to compare against. Should be raw value, NOT quoted. Use array for IN.
+        //        - CONNECTOR (optional): Logical connector (AND, OR). Defaults to 'AND' between filters. Last filter should have empty or no connector.
+        //    - ENDCLOSURES (optional): Array of strings for GROUP BY, ORDER BY, LIMIT, etc.
+        //    - FUNC_NM (optional): Calling function name for logging/messaging.
+        //-×
+        //CHANGES:
+        //×-
+        // @-- 2024-06-11 : Implemented using prepared statements for security. -@
+        // @-- 2024-06-11 : Integrated with _generateResponse helper. -@
+        //-×
+        //</SF>
+
+        $dbName = $prmObj['DB_NAME'] ?? $this->dbname; // Use class default if not provided
+        $tblName = $prmObj['TBL_NAME'] ?? '';
+        $fieldNames = $prmObj['FIELD_NAMES'] ?? ['*'];
+        $filters = $prmObj['FILTERS'] ?? [];
+        $endClosures = $prmObj['ENDCLOSURES'] ?? [];
+        $funcName = $prmObj['FUNC_NM'] ?? 'GNRL_SELECT'; // For message signature
+
+        // Basic validation
+        if (empty($tblName)) {
+            $msg = '<p class="bg-danger">Database->' . $funcName . ': Table name not provided for SELECT.</p>';
+            return $this->_generateResponse('NOK', $msg, [], '', $this->connection, 'SELECT');
+        }
+
+        // Build the base query
+        $sql = "SELECT " . implode(", ", array_map(function ($f) {
+            return "`$f`";
+        }, $fieldNames)) . " FROM `" . $dbName . "`.`" . $tblName . "`";
+
+        $params = []; // Array to hold values for binding
+        $types = ""; // String to hold types for binding
+
+        // Build WHERE clause with placeholders
+        if (!empty($filters)) {
+            $sql .= " WHERE ";
+            $whereClauses = [];
+            $filterIndex = 0; // Use a separate index for filters to handle connectors
+
+            foreach ($filters as $filter) {
+                $fieldName = $filter['FLD_NAME'] ?? '';
+                $relation = $filter['RELATION'] ?? '=';
+                $value = $filter['VALUE'] ?? null; // Can be null for IS NULL/IS NOT NULL
+                $connector = $filter['CONNECTOR'] ?? ($filterIndex < count($filters) - 1 ? 'AND' : ''); // Default connector
+
+                if (empty($fieldName)) {
+                    // Log this warning server-side
+                    error_log("Database->{$funcName}: Filter missing FLD_NAME.");
+                    continue; // Skip invalid filter
+                }
+
+                $clause = "`" . $fieldName . "` " . $relation;
+
+                // Handle relations that don't use a value or use a placeholder differently
+                if (in_array(strtoupper($relation), ['IS NULL', 'IS NOT NULL'])) {
+                    // No placeholder or binding needed for IS NULL/IS NOT NULL
+                    $whereClauses[] = $clause . " " . $connector;
+                } elseif (strtoupper($relation) === 'IN' && is_array($value)) {
+                    if (empty($value)) {
+                        // Handle empty IN clause - usually means no results
+                        $whereClauses[] = "1=0"; // Force no results if IN list is empty
+                    } else {
+                        $placeholders = implode(", ", array_fill(0, count($value), '?'));
+                        $clause .= " (" . $placeholders . ")";
+                        $whereClauses[] = $clause . " " . $connector;
+                        // Add each value from the array to params and infer type
+                        foreach ($value as $val) {
+                            $params[] = $val;
+                            if (is_int($val)) $types .= 'i';
+                            elseif (is_double($val)) $types .= 'd';
+                            else $types .= 's';
+                        }
+                    }
+                } else {
+                    // Default case: relation uses a single value placeholder
+                    $clause .= " ?";
+                    $whereClauses[] = $clause . " " . $connector;
+                    $params[] = $value; // Add the single value to params
+                    // Infer type (basic inference)
+                    if (is_int($value)) $types .= 'i';
+                    elseif (is_double($value)) $types .= 'd';
+                    else $types .= 's';
+                }
+                $filterIndex++; // Increment index after processing a valid filter
+            }
+            // Join the clauses, removing any trailing connector from the last clause
+            $sql .= rtrim(implode(" ", $whereClauses));
+        }
+
+        // Add end closures (GROUP BY, ORDER BY, LIMIT, etc.)
+        if (!empty($endClosures)) {
+            $sql .= " " . implode(" ", $endClosures);
+        }
+        $sql .= ";";
+
+        // Execute the prepared statement
+        try {
+            $stmt = $this->connection->prepare($sql);
+
+            // Bind parameters if there are any
+            if (!empty($types) && !empty($params)) {
+                // Use call_user_func_array for bind_param with dynamic parameters
+                // Note: ...$params syntax (splat operator) is cleaner in PHP 5.6+
+                $stmt->bind_param($types, ...$params);
+            }
+
+            $stmt->execute();
+            $result = $stmt->get_result(); // Get mysqli_result object
+            $rows = $result->fetch_all(MYSQLI_ASSOC); // Fetch all results as associative array
+            $stmt->close();
+
+            $msg = '<p class="bg-success">QUERY OK!!!<br>SELECT executed successfully.<br>Signature:Database->' . $funcName . '</p>';
+            return $this->_generateResponse('OK', $msg, $rows, $sql, $this->connection, 'SELECT');
+        } catch (Exception $e) {
+            // Catch exceptions thrown by mysqli_report or manual throws
+            $errorMsg = htmlspecialchars($e->getMessage()); // Sanitize message for HTML output
+            $msg = '<p class="bg-danger">QUERY ERROR!!!<br>Query: <code>' . htmlspecialchars($sql) . '</code><br>Error: <code>' . $errorMsg . '</code><br>Signature:Database->' . $funcName . '</p>';
+            // Log the detailed error server-side
+            error_log("Database->{$funcName} Error: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine() . "\nQuery: " . $sql . "\nParams: " . json_encode($params));
+
+            // Return NOK response
+            return $this->_generateResponse('NOK', $msg, [], $sql, $this->connection);
+        }
+    }
+
+    //+---------------------------------------------------------------------------------------+
+    //|##########################   P R I V A T E   S E C T I O N    #########################|
+    //+---------------------------------------------------------------------------------------+
+
+    private function _generateResponse(string $flag, string $msg, array $data = [], string $query = '', ?mysqli $conObj = null, string $operationType = ''): array
+    {
+        //<SF>
+        // CREATED ON: 2025-06-10 <br>
+        // CREATED BY: AX07057+G.Gemini<br>
+        // Gneerate a standard DB response object.<br>
+        // PARAMETERS:
+        //×-
+        // @-- $flag = the FLAG element of the answer -@
+        // @-- $msg = the MSF element of the answer -@
+        // @-- $data = the DATA element of the answer (SELECT result) -@
+        // @-- $query = the QRY element of the answer -@
+        // @-- $conObj = the MYSQLI CONNECTION object to get further elements -@
+        // @-- $operationType = the database operation type. -@
+        //-×
+        //
+        //CHANGES:
+        //×-
+        // @-- ... -@
+        //-×
+        //</SF>
+        $response = [
+            'FLAG' => $flag,
+            'MSG' => $msg, // Note: For APIs, plain text messages are generally preferred over HTML.
+            'DATA' => $data,
+            'QRY' => $query
+        ];
+
+        // Add mysqli_info for non-SELECT operations on success, if connection object is provided
+        if ($flag === 'OK' && $conObj && $operationType !== 'SELECT' && $operationType !== '') {
+            // Check if mysqli_info is available and returns something meaningful
+            $info = @mysqli_info($conObj); // Use @ to suppress warnings if info is not available
+            if ($info) {
+                // Append to existing message or add a new field
+                $response['MSG'] .= '<br>MYSQLI_INFO: ' . htmlspecialchars($info);
+            }
+        }
+        return $response;
     }
 
     // You will add methods here for prepared statements, executing queries, etc.
