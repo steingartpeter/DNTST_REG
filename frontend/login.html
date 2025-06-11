@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script src="css/bootstrap.min.js"></script>
+    <script src="css/bootstrap.bundle.min.js"></script>
+    <link rel="stylesheet" href="/DNTST_REG/frontend/css/bootstrap.min.css" />
+    <link
+      rel="stylesheet"
+      href="/DNTST_REG/frontend/css/bootstrap-reboot.min.css" />
+    <link
+      rel="stylesheet"
+      href="/DNTST_REG/frontend/css/bootstrap-grid.min.css" />
+    <link
+      rel="stylesheet"
+      href="/DNTST_REG/frontend/css/bootstrap-utilities.min.css" />
+    <link rel="stylesheet" href="/DNTST_REG/frontend/css/style.css" />
+
+    <title>Dentist Registration</title>
+    <!-- Add your CSS links here -->
+  </head>
+  <body>
+    <header>
+      <nav>
+        <!-- Navigation elements -->
+        <button id="logout-button" class="logged-in" style="display: none">
+          Logout
+        </button>
+      </nav>
+    </header>
+
+    <main class="container">
+      <div class="row">
+        <div class="col-md-5">
+          <section id="registration-section" class="logged-out">
+            <h2>Register</h2>
+            <form id="registration-form">
+              <div class="form-group">
+                <label for="reg-first-name">First Name:</label>
+                <input
+                  type="text"
+                  id="reg-first-name"
+                  name="first_name"
+                  class="form-control" />
+              </div>
+              <div class="from-group">
+                <label for="reg-last-name">Last Name:</label>
+                <input
+                  type="text"
+                  class="form-control"
+                  id="reg-last-name"
+                  name="last_name" />
+              </div>
+              <div class="from-group">
+                <label for="reg-email">Email:</label>
+                <input
+                  type="email"
+                  class="form-control"
+                  id="reg-email"
+                  name="email"
+                  required />
+              </div>
+              <div class="from-group">
+                <label for="reg-password">Password:</label>
+                <input
+                  type="password"
+                  class="form-control"
+                  id="reg-password"
+                  name="password"
+                  required />
+              </div>
+              <hr />
+              <div class="from-group">
+                <button type="submit" class="btn btn-primary">Register</button>
+              </div>
+            </form>
+          </section>
+        </div>
+      </div>
+
+      <div class="row">
+        <div class="col-md-5">
+          <section id="login-section">
+            <h2>Login</h2>
+            <form id="login-form">
+              <label for="login-email">Email:</label>
+              <input
+                type="email"
+                id="login-email"
+                name="email"
+                required
+                class="form-control" />
+              <br />
+              <label for="login-password">Password:</label>
+              <input
+                type="password"
+                id="login-password"
+                name="password"
+                required
+                class="form-control" />
+              <br />
+              <button type="submit" class="btn btn-primary">Login</button>
+            </form>
+          </section>
+        </div>
+      </div>
+      <div class="row">
+        <section
+          id="appointments-section"
+          class="logged-in"
+          style="display: none">
+          <h2>Your Appointments</h2>
+          <div id="appointments-container">
+            <!-- Appointments will be rendered here by appointments.js -->
+          </div>
+        </section>
+      </div>
+    </main>
+
+    <div class="container">
+      <footer
+        class="d-flex flex-wrap justify-content-between align-items-center py-3 my-4 border-top">
+        <p>Created by AX07057 + G.Gemini &copy; 2025</p>
+      </footer>
+    </div>
+
+    <script type="module" src="js/main.js"></script>
+  </body>
+</html>
