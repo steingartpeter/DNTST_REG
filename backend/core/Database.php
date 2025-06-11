@@ -182,8 +182,8 @@ class Database
 
         // Build the base query
         $sql = "SELECT " . implode(", ", array_map(function ($f) {
-            return "`$f`";
-        }, $fieldNames)) . " FROM `" . $dbName . "`.`" . $tblName . "`";
+            return "$f";
+        }, $fieldNames)) . " FROM " . $dbName . "." . $tblName;
 
         $params = []; // Array to hold values for binding
         $types = ""; // String to hold types for binding
@@ -206,7 +206,7 @@ class Database
                     continue; // Skip invalid filter
                 }
 
-                $clause = "`" . $fieldName . "` " . $relation;
+                $clause = "" . $fieldName . " " . $relation;
 
                 // Handle relations that don't use a value or use a placeholder differently
                 if (in_array(strtoupper($relation), ['IS NULL', 'IS NOT NULL'])) {
@@ -279,6 +279,85 @@ class Database
             return $this->_generateResponse('NOK', $msg, [], $sql, $this->connection);
         }
     }
+
+    public function GNRL_INSERT(array $prmObj): array
+    {
+        //<SF>
+        // CREATED ON: 2025-06-12 <br>
+        // CREATED BY: AX07057+G.Gemini<br>
+        // General insertion query, based on prm obj, using prepared statements.<br>
+        // PARAMETERS:
+        //×-
+        // @-- @prmObj = an object with several elements: DB_NAME,TBL_NM,FIELD_NAMES,VALUES,FUNC_NM -@
+        //    - DB_NAME (optional): Database name. Defaults to class dbname.
+        //    - TBL_NAME (required): Table name.
+        //    - FIELD_NAMES (required): Array of field names for the insert.
+        //    - VALUES (required): Array of values corresponding to FIELD_NAMES for a single row.
+        //    - FUNC_NM (optional): Calling function name for logging/messaging.
+        //-×
+        //CHANGES:
+        //×-
+        // @-- 2025-06-12 : Implemented using prepared statements for security. -@
+        // @-- 2025-06-12 : Integrated with _generateResponse helper. -@
+        //-×
+        //</SF>
+
+        $dbName = $prmObj['DB_NAME'] ?? $this->dbname;
+        $tblName = $prmObj['TBL_NAME'] ?? '';
+        $fieldNames = $prmObj['FIELD_NAMES'] ?? [];
+        $values = $prmObj['VALUES'] ?? []; // Expecting a single array of values for one row
+        $funcName = $prmObj['FUNC_NM'] ?? 'GNRL_INSERT';
+
+        // Basic validation
+        if (empty($tblName) || empty($fieldNames) || empty($values)) {
+            $msg = '<p class="bg-danger">Database->' . $funcName . ': Table name, field names, or values not provided for INSERT.</p>';
+            return $this->_generateResponse('NOK', $msg, [], '', $this->connection, 'INSERT');
+        }
+
+        if (count($fieldNames) !== count($values)) {
+            $msg = '<p class="bg-danger">Database->' . $funcName . ': The number of field names does not match the number of values for INSERT.</p>';
+            return $this->_generateResponse('NOK', $msg, [], '', $this->connection, 'INSERT');
+        }
+
+        // Build the SQL query
+        $sqlFieldNames = implode(", ", array_map(function ($f) {
+            return "`$f`";
+        }, $fieldNames));
+        $placeholders = implode(", ", array_fill(0, count($values), '?'));
+        $sql = "INSERT INTO `" . $dbName . "`.`" . $tblName . "` (" . $sqlFieldNames . ") VALUES (" . $placeholders . ");";
+
+        $types = ""; // String to hold types for binding
+        foreach ($values as $value) {
+            if (is_int($value)) $types .= 'i';
+            elseif (is_double($value)) $types .= 'd';
+            // elseif (is_bool($value)) $types .= 'i'; // Booleans can be treated as integers (0 or 1)
+            // elseif (is_null($value)) $types .= 's'; // Or handle NULLs specifically if needed, often 's' works with NULL
+            else $types .= 's'; // Default to string
+        }
+
+        // Execute the prepared statement
+        try {
+            $stmt = $this->connection->prepare($sql);
+
+            if (!empty($types)) { // Should always be true if $values is not empty
+                $stmt->bind_param($types, ...$values);
+            }
+
+            $stmt->execute();
+            $insertId = $this->connection->insert_id;
+            $affectedRows = $stmt->affected_rows;
+            $stmt->close();
+
+            $msg = '<p class="bg-success">QUERY OK!!!<br>INSERT executed successfully.<br>Signature:Database->' . $funcName . '</p>';
+            return $this->_generateResponse('OK', $msg, ['insert_id' => $insertId, 'affected_rows' => $affectedRows], $sql, $this->connection, 'INSERT');
+        } catch (Exception $e) {
+            $errorMsg = htmlspecialchars($e->getMessage());
+            $msg = '<p class="bg-danger">QUERY ERROR!!!<br>Query: <code>' . htmlspecialchars($sql) . '</code><br>Error: <code>' . $errorMsg . '</code><br>Signature:Database->' . $funcName . '</p>';
+            error_log("Database->{$funcName} Error: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine() . "\nQuery: " . $sql . "\nParams: " . json_encode($values));
+            return $this->_generateResponse('NOK', $msg, [], $sql, $this->connection);
+        }
+    }
+
 
     //+---------------------------------------------------------------------------------------+
     //|##########################   P R I V A T E   S E C T I O N    #########################|
